@@ -233,7 +233,7 @@ def get_stinespring_unitary(choi, target_choi, target_unitary, n_qubits):
     return completed, num_anc
 
 
-def stinespring_algorithm(target_unitary, n_qubits, noise_oracle, disp=True, dn_tol=1e-2, rank_constraint=2, bm_ops=8, cfac_tol=1.2, cfac_budget=1.5, saved_circuits ,depth,full_connectivity):
+def stinespring_algorithm(target_unitary, n_qubits, noise_oracle, saved_circuits, depth, full_connectivity, noise_model, disp=True, dn_tol=1e-2, rank_constraint=2, bm_ops=8, cfac_tol=1.2, cfac_budget=1.5):
     """
     target_choi: Choi matrix of operation to be decomposed
     n_qubits: may be 1 or 2

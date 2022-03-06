@@ -12,6 +12,12 @@ from qiskit.circuit.library.standard_gates.equivalence_library import StandardEq
 from qiskit.circuit.library import standard_gates
 import random
 
+from basis_ops import *
+from decomposition import *
+from channels import *
+from stinespring import stinespring_algorithm
+from variational_approximation import get_approx_circuit, get_varform_circuit
+
 #from json_tools import *
 #from basis_ops import *
 #from decomposition import *
@@ -185,7 +191,7 @@ def gen_data(noise_model,target_unitary,n_qubits,depth,full_connectivity,gate_na
     cfac_budget = None
 
     saved_circuits = list()
-    fixed_unitaries, fixed_choi, coeffs = stinespring_algorithm(target_unitary, n_qubits, noise_oracle, disp=True, cfac_tol=1.2, bm_ops=8, cfac_budget=cfac_budget,saved_circuits,depth,full_connectivity)
+    fixed_unitaries, fixed_choi, coeffs = stinespring_algorithm(target_unitary, n_qubits, noise_oracle, saved_circuits, depth, full_connectivity, noise_model, disp=True, cfac_tol=1.2, bm_ops=8, cfac_budget=cfac_budget)
     print("STINESPRING:", np.sum(np.abs(coeffs)))
     np.savez(gate_name+"/final_"+gate_name+".npz", fixed_unitaries, fixed_choi, coeffs)
     for i in range(len(saved_circuits)):
