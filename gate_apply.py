@@ -1,3 +1,4 @@
+
 import numpy as np
 import scipy
 import glob
@@ -11,12 +12,7 @@ from qiskit.compiler import transpile
 from qiskit.circuit.library.standard_gates.equivalence_library import StandardEquivalenceLibrary
 from qiskit.circuit.library import standard_gates
 import random
-
-from basis_ops import *
-from decomposition import *
-from channels import *
-from stinespring import stinespring_algorithm
-from variational_approximation import get_approx_circuit, get_varform_circuit
+from qiskit import Aer, transpile
 
 #from json_tools import *
 #from basis_ops import *
@@ -26,7 +22,7 @@ from variational_approximation import get_approx_circuit, get_varform_circuit
 #from variational_approximation import get_approx_circuit, get_varform_circuit
     
 
-def data_load(file_name):
+def data_load(file_name,print_data):
     # load quasiprobability coefficients 
     coeffs={}
     noise_choi={}
@@ -42,20 +38,30 @@ def data_load(file_name):
         num_files = len(glob.glob(file_name[kind]+"/*.qasm"))
         qasm_circuits = [read_file(file_name[kind]+"/final_"+kind+"_sim_circ"+str(f)+".qasm") for f in range(num_files)]
         circuits[kind] = [QuantumCircuit.from_qasm_str(s) for s in qasm_circuits]
+    if print_data:
+        print('data_load success')
     return circuits,coeffs,noise_choi
     
-def my_sample(gate_num,shots,circuits,coeffs):
+def my_sample(gate_num,shots,circuits,coeffs,print_data):
     idxlist={}
     subqcidxList={}
     subqccoeffs={}
-    kind=gate_num.keys()
-    for kind in kind:
-        idxlist[kind] = range(len(circuits[kind]))
+    kinds=gate_num.keys()
+    
+    if print_data:
+        print('start sample')
+    for kind in kinds:
+        temp=[]
+        for i in range(len(circuits[kind])):
+            temp.append(i)
+        idxlist[kind] = temp
+            
     for i in range(shots):
         result=[]
         strr=''
-        for kind in kind:
-            result=random.choices(idxlist,weights=abs(coeffs[kind]),k=gate_num[kind])
+        for kind in kinds:
+            
+            result=random.choices(idxlist[kind],weights=abs(coeffs[kind]),k=gate_num[kind])
             strr+='diff'
             strr+=kind+' '
             for j in range(gate_num[kind]):
@@ -68,10 +74,17 @@ def my_sample(gate_num,shots,circuits,coeffs):
             result2=1
             seq=strr.split('diff')
             for seq in seq:
+                if seq=='':
+                    continue
                 seq_temp=seq.split(' ')
                 coe=coeffs[seq_temp[0]]
-                for j in range(gate_num[kind]):
-                    result2 = result2*coe[seq_temp[j+1]]
+                print(seq_temp)
+                for j in seq_temp:
+                    if j.isdigit():
+                        result2 = result2*coe[int(j)]
+                        print(result2)
+                    else:
+                        continue
             #print(result1[0],result2)
             if result2>0:
                 subqccoeffs[strr]=1
@@ -81,17 +94,20 @@ def my_sample(gate_num,shots,circuits,coeffs):
     #print(subqccoeffs)
     return subqcidxList, subqccoeffs
 
-def my_append(qc,subqc,place,noise_model):
+def my_append(qc,subqc,place,noise_model,print_data):
     if subqc.num_qubits==1:
         qctot=QuantumCircuit(1)
         qctot+=subqc
         qc_noisy=insert_noise(qctot,noise_model)
+        qc.append(qc_noisy,place[:1])
+
     elif subqc.num_qubits == 2:
         qctot = QuantumCircuit(2)
         qctot += subqc
         qc_noisy = insert_noise(qctot, noise_model)
         # qctot.to_gate()
-        qc.append(qc_noisy, place[:2])
+        qc.append(qc_noisy,place[:2])
+        
     elif subqc.num_qubits == 3:
         qctot = QuantumCircuit(3)
         qctot.reset(2)       
@@ -99,52 +115,75 @@ def my_append(qc,subqc,place,noise_model):
         qc_noisy = insert_noise(qctot, noise_model)
         # qctot.to_gate()
         qc.append(qc_noisy, place)
+
     else: raise
+    if print_data:
+        print('1',place)
+        print('2',qc_noisy.data)
+        print('3',qc.data)
+        print('4',subqc.num_qubits)
+    return qc
     
 
-def our_simulation(shots,qc,file_name,noise_model):
+def our_simulation(shots,qc,file_name,noise_model,print_data):
     #load qc information
     num_qubit=qc.num_qubits
     #load file of decomposition set
-    circuits,coeffs,noise_choi=data_load(file_name)
+    circuits,coeffs,noise_choi=data_load(file_name,print_data)
     
     #count number of gate
     gate_num={}
     for instruction in qc.data:
-        if instruction[0].name in gate_num.keys():
-            gate_num[instruction[0].name]+=1
-        else:
-            gate_num[instruction[0].name]=0
-            
+        if instruction[0].name in file_name.keys():
+            if instruction[0].name in gate_num.keys():
+                gate_num[instruction[0].name]+=1
+            else:
+                gate_num[instruction[0].name]=1
+    if print_data==True:
+        print('instruction loading success')
+                
     #sample
-    subqcidxList, subqccoeffs=my_sample(gate_num,shots,circuits,coeffs)
+    subqcidxList, subqccoeffs=my_sample(gate_num,shots,circuits,coeffs,print_data)
     
+    if print_data:
+        print('sample_success')
     totalcount={}
-    
+    if print_data:
+        print(subqccoeffs)
+        print('simulation start')
     #circuit construct
     for subcir in subqcidxList.keys():
-        qc_new=QuantumCircuit(num_qubit+2,num_qubit)
+        qc_new=QuantumCircuit(num_qubit+2,num_qubit) ##+2 is for extra bit
+        qc_new.x(0)
         strr=subcir.split('diff')
         cir_temp={}
         #gate load
         for cir in strr:
             cir_kind=cir.split(' ')
-            cir_temp[str(cir_kind[0])]=cir_kind
-            cir_kind.pop(0)
+            cir_temp[cir_kind[0]]=cir_kind
+            cir_temp[cir_kind[0]].pop(0)
+        print(cir_temp)
         #gate apply
         for instruction in qc.data:
             kind=instruction[0].name
             if kind in cir_temp.keys():
-                if instruction[0][2][0] != []: 
-                    place=[instruction[0][1][0].index,instruction[0][2][0].index,num_qubit+1]
+                ##get place
+                if len(instruction[1])==2 : 
+                    place=[int(instruction[1][0].index),int(instruction[1][1].index),num_qubit+1]
                 else:
-                    place=[instruction[0][1][0].index,num_qubit+1,num_qubit+2]
-                my_append(qc_new,circuits[kind][cir_temp[kind][0]],place,noise_model)
+                    place=[int(instruction[1][0].index),num_qubit+1,num_qubit+2]
+                qc_append=my_append(qc_new,circuits[kind][int(cir_temp[kind][0])],place,noise_model,print_data)
+            #else:
+            #    qc.append(instruction)
+        qc_append.measure(range(num_qubit),range(num_qubit))
         #simulation
-        qc_noisy = insert_noise(qc_new, noise_model)
+        qc_noisy = insert_noise(qc_append, noise_model)
         backend = Aer.get_backend('qasm_simulator')
-        job=execute(qc_noisy,backend,subqcidxList[subcir])
-        counts = job.result().get_counts(qc_noisy)
+        print('5',qc_noisy.data)
+        qc_noisy=transpile(qc_noisy,backend)
+        result=backend.run(qc_noisy,shots=subqcidxList[subcir]).result()
+        counts = result.get_counts(qc_noisy)
+        #print(counts)
         #coefficient apply
         for data in counts:
             if data in totalcount.keys():
@@ -157,8 +196,9 @@ def our_simulation(shots,qc,file_name,noise_model):
                     totalcount[data] = counts[data]
                 elif subqccoeffs[subcir] == -1:
                     totalcount[data] = -counts[data]
-                    
-        return totalcount
+        if print_data:
+            print(totalcount)            
+    return totalcount
     
     
 ##for generate decompostion set
