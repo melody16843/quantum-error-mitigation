@@ -15,3 +15,5 @@ the file basis_ops.py, burer_monteiro.py, channels.py, decomposition.py, diamond
 
 ## notice
 please use cx gate instead of cnot, or the program would lead to a bug.
+
+### now testing correctness of multi-type
