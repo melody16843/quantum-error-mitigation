@@ -78,11 +78,9 @@ def my_sample(gate_num,shots,circuits,coeffs,print_data):
                     continue
                 seq_temp=seq.split(' ')
                 coe=coeffs[seq_temp[0]]
-                print(seq_temp)
                 for j in seq_temp:
                     if j.isdigit():
                         result2 = result2*coe[int(j)]
-                        print(result2)
                     else:
                         continue
             #print(result1[0],result2)
@@ -117,19 +115,20 @@ def my_append(qc,subqc,place,noise_model,print_data):
         qc.append(qc_noisy, place)
 
     else: raise
-    if print_data:
-        print('1',place)
-        print('2',qc_noisy.data)
-        print('3',qc.data)
-        print('4',subqc.num_qubits)
+    #if print_data:
+    #    print('1',place)
+    #    print('2',qc_noisy.data)
+    #    print('3',qc.data)
+    #   print('4',subqc.num_qubits)
     return qc
     
 
-def our_simulation(shots,qc,file_name,noise_model,print_data):
+def our_simulation(shots,qc,file_name,noise_model,print_data,gamma):
     #load qc information
     num_qubit=qc.num_qubits
     #load file of decomposition set
     circuits,coeffs,noise_choi=data_load(file_name,print_data)
+    
     
     #count number of gate
     gate_num={}
@@ -141,6 +140,14 @@ def our_simulation(shots,qc,file_name,noise_model,print_data):
                 gate_num[instruction[0].name]=1
     if print_data==True:
         print('instruction loading success')
+        
+    #sample overhead
+    overhead=1
+    for gate in gamma.keys():
+        overhead=overhead*gamma[gate]**gate_num[gate]
+    if print_data:
+        print('total overhead:',overhead)
+    shots=shots*overhead
                 
     #sample
     subqcidxList, subqccoeffs=my_sample(gate_num,shots,circuits,coeffs,print_data)
@@ -150,11 +157,11 @@ def our_simulation(shots,qc,file_name,noise_model,print_data):
     totalcount={}
     if print_data:
         print(subqccoeffs)
+        print(subqcidxList)
         print('simulation start')
     #circuit construct
     for subcir in subqcidxList.keys():
         qc_new=QuantumCircuit(num_qubit+2,num_qubit) ##+2 is for extra bit
-        qc_new.x(0)
         strr=subcir.split('diff')
         cir_temp={}
         #gate load
@@ -162,7 +169,6 @@ def our_simulation(shots,qc,file_name,noise_model,print_data):
             cir_kind=cir.split(' ')
             cir_temp[cir_kind[0]]=cir_kind
             cir_temp[cir_kind[0]].pop(0)
-        print(cir_temp)
         #gate apply
         for instruction in qc.data:
             kind=instruction[0].name
@@ -172,18 +178,26 @@ def our_simulation(shots,qc,file_name,noise_model,print_data):
                     place=[int(instruction[1][0].index),int(instruction[1][1].index),num_qubit+1]
                 else:
                     place=[int(instruction[1][0].index),num_qubit+1,num_qubit+2]
-                qc_append=my_append(qc_new,circuits[kind][int(cir_temp[kind][0])],place,noise_model,print_data)
-            #else:
-            #    qc.append(instruction)
-        qc_append.measure(range(num_qubit),range(num_qubit))
+                qc_new=my_append(qc_new,circuits[kind][int(cir_temp[kind][0])],place,noise_model,print_data)
+                if print_data:
+                    print('apply circuit No.',cir_temp[kind][0])
+                cir_temp[kind].pop(0)
+            ##need to fix
+            else:
+                if len(instruction[1])==2 : 
+                    place=[int(instruction[1][0].index),int(instruction[1][1].index)]
+                else:
+                    place=[int(instruction[1][0].index)]
+                if print_data:
+                    print('apply',instruction[0].name)
+                qc_new.append(instruction[0],place)
+        qc_new.measure(range(num_qubit),range(num_qubit))
         #simulation
-        qc_noisy = insert_noise(qc_append, noise_model)
+        qc_noisy = insert_noise(qc_new, noise_model)
         backend = Aer.get_backend('qasm_simulator')
-        print('5',qc_noisy.data)
         qc_noisy=transpile(qc_noisy,backend)
         result=backend.run(qc_noisy,shots=subqcidxList[subcir]).result()
         counts = result.get_counts(qc_noisy)
-        #print(counts)
         #coefficient apply
         for data in counts:
             if data in totalcount.keys():
@@ -197,7 +211,12 @@ def our_simulation(shots,qc,file_name,noise_model,print_data):
                 elif subqccoeffs[subcir] == -1:
                     totalcount[data] = -counts[data]
         if print_data:
-            print(totalcount)            
+            print(totalcount)
+    # final adjust           
+    for data in totalcount.keys():
+        if totalcount[data]<0:
+            totalcount[data]=0
+                     
     return totalcount
     
     
