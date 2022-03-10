@@ -17,3 +17,4 @@ the file basis_ops.py, burer_monteiro.py, channels.py, decomposition.py, diamond
 please use cx gate instead of cnot, or the program would lead to a bug.
 
 ### now testing correctness of multi-type
+### single-qubit gate gen_data need to fix
